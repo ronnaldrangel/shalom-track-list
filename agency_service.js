@@ -1,4 +1,5 @@
 const puppeteer = require('puppeteer');
+const redisClient = require('./redis_client');
 
 class AgencyService {
     constructor() {
@@ -53,6 +54,17 @@ class AgencyService {
     }
 
     async getAgencies() {
+        // Check cache first
+        try {
+            const cachedData = await redisClient.get('agencies_list');
+            if (cachedData) {
+                console.log('Returning agencies from Redis cache');
+                return JSON.parse(cachedData);
+            }
+        } catch (err) {
+            console.error('Redis error (get):', err);
+        }
+
         // Queue mechanism: Wait if currently processing
         while (this.processing) {
             await new Promise(r => setTimeout(r, 100));
@@ -94,6 +106,14 @@ class AgencyService {
 
             const data = await response.json();
             
+            // Cache the result
+            try {
+                await redisClient.set('agencies_list', JSON.stringify(data), { EX: 86400 }); // Cache for 24 hours
+                console.log('Agencies cached in Redis');
+            } catch (err) {
+                console.error('Redis error (set):', err);
+            }
+
             return data;
 
         } catch (error) {

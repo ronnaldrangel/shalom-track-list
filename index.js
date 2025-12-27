@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const tracker = require('./tracker');
 const agencyService = require('./agency_service');
+const redisClient = require('./redis_client');
 
 const app = express();
 app.use(express.json());
@@ -44,4 +45,9 @@ app.get('/list', async (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  if (redisClient.isOpen) {
+      console.log('✅ Redis is connected');
+  } else {
+      console.log('⏳ Waiting for Redis connection...');
+  }
 });

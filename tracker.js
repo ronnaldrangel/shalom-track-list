@@ -1,4 +1,5 @@
 const puppeteer = require('puppeteer');
+const redisClient = require('./redis_client');
 require('dotenv').config();
 
 class ShalomTracker {
@@ -95,6 +96,19 @@ class ShalomTracker {
     }
 
     async trackPackage(orderNumber, orderCode) {
+        const cacheKey = `tracking:${orderNumber}:${orderCode}`;
+        
+        // Check cache first
+        try {
+            const cachedData = await redisClient.get(cacheKey);
+            if (cachedData) {
+                console.log(`Returning tracking data for ${orderNumber} from Redis cache`);
+                return JSON.parse(cachedData);
+            }
+        } catch (err) {
+            console.error('Redis error (get):', err);
+        }
+
         // Queue mechanism: Wait if currently processing
         while (this.processing) {
             await new Promise(r => setTimeout(r, 100));
@@ -202,6 +216,14 @@ class ShalomTracker {
 
             if (!apiResult) {
                 throw new Error('Timeout waiting for API response (or received null)');
+            }
+
+            // Cache the result
+            try {
+                await redisClient.set(cacheKey, JSON.stringify(apiResult), { EX: 300 }); // Cache for 5 minutes
+                console.log(`Tracking data for ${orderNumber} cached in Redis`);
+            } catch (err) {
+                console.error('Redis error (set):', err);
             }
 
             return apiResult;
