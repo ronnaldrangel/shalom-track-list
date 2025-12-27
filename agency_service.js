@@ -73,7 +73,7 @@ class AgencyService {
             const apiResponsePromise = this.page.waitForResponse(response => 
                 response.url().includes('agencias') && 
                 response.url().includes('listar') &&
-                response.status() === 200
+                response.request().method() !== 'OPTIONS'
             , { timeout: 30000 });
 
             // We use goto to trigger the load. If we are already there, reload might be needed to trigger the API call again.
@@ -81,6 +81,17 @@ class AgencyService {
 
             console.log('Waiting for agency API response...');
             const response = await apiResponsePromise;
+            
+            if (response.status() !== 200) {
+                console.error(`Agency API returned error status: ${response.status()} ${response.statusText()}`);
+                // Try to get error body
+                try {
+                    const text = await response.text();
+                    console.error('Error body:', text.substring(0, 500));
+                } catch (e) {}
+                throw new Error(`Agency API returned status ${response.status()}`);
+            }
+
             const data = await response.json();
             
             return data;
