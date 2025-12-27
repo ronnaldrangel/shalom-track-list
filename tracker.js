@@ -19,20 +19,33 @@ class ShalomTracker {
         console.log('Initializing persistent browser...');
         this.browser = await puppeteer.launch({
             headless: "new",
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
+            args: [
+                '--no-sandbox', 
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--no-first-run',
+                '--no-zygote',
+                '--disable-gpu'
+            ]
         });
         
         console.log(`Tracker Browser PID: ${this.browser.process().pid}`);
 
         this.page = await this.browser.newPage();
         
+        // Set a real User-Agent
+        await this.page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
         // Block unnecessary resources to speed up
         await this.page.setRequestInterception(true);
         this.page.on('request', (req) => {
-            if (['image', 'stylesheet', 'font'].includes(req.resourceType())) {
-                req.abort();
+            if (req.isInterceptResolutionHandled()) return;
+
+            if (['image', 'stylesheet', 'font', 'media'].includes(req.resourceType())) {
+                req.abort().catch(() => {});
             } else {
-                req.continue();
+                req.continue().catch(() => {});
             }
         });
 
@@ -154,16 +167,26 @@ class ShalomTracker {
             const apiResponsePromise = new Promise((resolve, reject) => {
                 const timeout = setTimeout(() => {
                     resolve(null); 
-                }, 8000); // 8s timeout
+                }, 15000); // Increased to 15s timeout
 
                 responseHandler = async (response) => {
                     const url = response.url();
-                    if (url.includes('shalomapi.com') && url.includes('rastrea') && response.request().method() === 'POST') {
+                    const method = response.request().method();
+                    
+                    // Debug logs for relevant requests
+                    if (url.includes('shalom') || url.includes('rastrea')) {
+                        console.log(`[DEBUG] Response received: ${method} ${url}`);
+                    }
+
+                    if (url.includes('rastrea') && url.includes('buscar') && method === 'POST') {
+                        console.log('[DEBUG] Matched API URL:', url);
                         try {
                             const json = await response.json();
+                            console.log('[DEBUG] API Response captured successfully');
                             clearTimeout(timeout);
                             resolve(json);
                         } catch (e) {
+                            console.log('[DEBUG] Error parsing JSON:', e.message);
                             // ignore parsing errors
                         }
                     }

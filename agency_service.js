@@ -13,20 +13,41 @@ class AgencyService {
         console.log('Initializing Agency Service browser...');
         this.browser = await puppeteer.launch({
             headless: "new",
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
+            args: [
+                '--no-sandbox', 
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--no-first-run',
+                '--no-zygote',
+                '--disable-gpu'
+            ]
         });
         
         console.log(`Agency Service Browser PID: ${this.browser.process().pid}`);
 
         this.page = await this.browser.newPage();
         
+        // Set a real User-Agent
+        await this.page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
         // Block unnecessary resources to speed up
         await this.page.setRequestInterception(true);
         this.page.on('request', (req) => {
-            if (['image', 'stylesheet', 'font'].includes(req.resourceType())) {
-                req.abort();
+            if (req.isInterceptResolutionHandled()) return;
+
+            if (['image', 'stylesheet', 'font', 'media'].includes(req.resourceType())) {
+                req.abort().catch(() => {});
             } else {
-                req.continue();
+                req.continue().catch(() => {});
+            }
+        });
+        
+        // Log specific API calls for monitoring (optional)
+        this.page.on('response', response => {
+            const url = response.url();
+            if (url.includes('agencias/listar') && response.request().method() === 'POST') {
+                // console.log(`[DEBUG] Agencies loaded from: ${url}`);
             }
         });
     }
@@ -48,8 +69,10 @@ class AgencyService {
             console.log('Navigating to agencias.shalom.pe...');
             
             // Setup response listener before navigation to catch it early if it fires quickly
+            // Updated to be more flexible with domain changes
             const apiResponsePromise = this.page.waitForResponse(response => 
-                response.url().includes('servicesweb.shalomapi.com/api/v1/web/agencias/listar') && 
+                response.url().includes('agencias') && 
+                response.url().includes('listar') &&
                 response.status() === 200
             , { timeout: 30000 });
 
