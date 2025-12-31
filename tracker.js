@@ -179,8 +179,14 @@ class ShalomTracker {
 
             // SETUP RESPONSE INTERCEPTION
             const apiResponsePromise = new Promise((resolve, reject) => {
+                const capturedData = {};
+
                 const timeout = setTimeout(() => {
-                    resolve(null); 
+                    if (Object.keys(capturedData).length > 0) {
+                        resolve(capturedData);
+                    } else {
+                        resolve(null); 
+                    }
                 }, 15000); // Increased to 15s timeout
 
                 responseHandler = async (response) => {
@@ -192,17 +198,27 @@ class ShalomTracker {
                         console.log(`[DEBUG] Response received: ${method} ${url}`);
                     }
 
-                    if (url.includes('rastrea') && url.includes('buscar') && method === 'POST') {
-                        console.log('[DEBUG] Matched API URL:', url);
-                        try {
+                    try {
+                        if (url.includes('rastrea') && url.includes('buscar') && method === 'POST') {
+                            console.log('[DEBUG] Matched Search API URL:', url);
                             const json = await response.json();
-                            console.log('[DEBUG] API Response captured successfully');
-                            clearTimeout(timeout);
-                            resolve(json);
-                        } catch (e) {
-                            console.log('[DEBUG] Error parsing JSON:', e.message);
-                            // ignore parsing errors
+                            capturedData.search = json;
                         }
+
+                        if (url.includes('rastrea') && url.includes('estados') && method === 'POST') {
+                            console.log('[DEBUG] Matched Statuses API URL:', url);
+                            const json = await response.json();
+                            capturedData.statuses = json;
+                        }
+
+                        if (capturedData.search && capturedData.statuses) {
+                            console.log('[DEBUG] Both APIs captured successfully');
+                            clearTimeout(timeout);
+                            resolve(capturedData);
+                        }
+                    } catch (e) {
+                        console.log('[DEBUG] Error parsing JSON:', e.message);
+                        // ignore parsing errors
                     }
                 };
 
