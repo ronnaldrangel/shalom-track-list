@@ -80,41 +80,58 @@ class AgencyService {
 
             console.log('Navigating to agencias.shalom.pe...');
             
-            // Setup response listener before navigation to catch it early if it fires quickly
-            // Updated to be more flexible with domain changes
-            const apiResponsePromise = this.page.waitForResponse(response => 
-                response.url().includes('agencias') && 
-                response.url().includes('listar') &&
-                response.request().method() !== 'OPTIONS'
-            , { timeout: 30000 });
+            let responseHandler = null;
+
+            // SETUP RESPONSE INTERCEPTION (More robust pattern)
+            const apiResponsePromise = new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    resolve(null); 
+                }, 30000); // 30s timeout
+
+                responseHandler = async (response) => {
+                    const url = response.url();
+                    const method = response.request().method();
+                    
+                    // Debug logs
+                    if (url.includes('shalom') || url.includes('agencias')) {
+                        console.log(`[DEBUG] Response received: ${method} ${url}`);
+                    }
+
+                    if (url.includes('agencias') && url.includes('listar') && method !== 'OPTIONS') {
+                        console.log('[DEBUG] Matched Agencies API URL:', url);
+                        try {
+                            const json = await response.json();
+                            console.log('[DEBUG] Agencies API Response captured successfully');
+                            clearTimeout(timeout);
+                            resolve(json);
+                        } catch (e) {
+                            console.log('[DEBUG] Error parsing JSON:', e.message);
+                        }
+                    }
+                };
+
+                this.page.on('response', responseHandler);
+            });
 
             // We use goto to trigger the load. If we are already there, reload might be needed to trigger the API call again.
             await this.page.goto('https://agencias.shalom.pe/', { waitUntil: 'networkidle2' });
 
             console.log('Waiting for agency API response...');
-            const response = await apiResponsePromise;
+            const apiResult = await apiResponsePromise;
             
-            if (response.status() !== 200) {
-                console.error(`Agency API returned error status: ${response.status()} ${response.statusText()}`);
-                // Try to get error body
-                try {
-                    const text = await response.text();
-                    console.error('Error body:', text.substring(0, 500));
-                } catch (e) {}
-                throw new Error(`Agency API returned status ${response.status()}`);
+            if (!apiResult) {
+                 throw new Error('Timeout waiting for Agency API response (or received null)');
             }
 
-            const data = await response.json();
-            
             // Cache the result
             try {
-                await redisClient.set('agencies_list', JSON.stringify(data), { EX: 86400 }); // Cache for 24 hours
+                await redisClient.set('agencies_list', JSON.stringify(apiResult), { EX: 86400 }); // Cache for 24 hours
                 console.log('Agencies cached in Redis');
             } catch (err) {
                 console.error('Redis error (set):', err);
             }
 
-            return data;
+            return apiResult;
 
         } catch (error) {
             console.error('Error getting agencies:', error);
@@ -124,6 +141,10 @@ class AgencyService {
             }
             throw error;
         } finally {
+             // Cleanup listener
+             if (this.page && responseHandler) {
+                this.page.off('response', responseHandler);
+            }
             this.processing = false;
         }
     }
